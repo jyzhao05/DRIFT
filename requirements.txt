@@ -1,0 +1,19 @@
+# Python dependencies.
+# Install torch / PyG / torch-cluster builds appropriate to your CUDA or CPU environment.
+torch==2.0.0
+torch-geometric==2.6.1
+torch-cluster==1.6.3+pt20cu118
+numpy==1.26.4
+scipy==1.15.3
+diffusers==0.35.1
+easydict==1.13
+PyYAML==6.0.2
+einops==0.8.1
+tqdm==4.67.1
+tslearn==0.6.3
+faiss-cpu==1.12.0
+matplotlib==3.10.6
+imageio==2.37.0
+
+# Optional: OpenCV enables additional visualization features.
+# opencv-python
