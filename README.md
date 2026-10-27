@@ -1,41 +1,76 @@
 # DRIFT
 
-Core implementation of DRIFT for graph-conditioned diffusion trajectory generation.
-The model encodes a local point-cloud graph and generates waypoints conditioned on the environment, velocity, start point, and goal.
+DRIFT is a diffusion-based framework for local robot trajectory generation. Given a point cloud, robot velocity, a start point, and a goal, it generates a sequence of 2D waypoints in the robot's local coordinate frame.
 
-## Method
+## Overview
 
-Local point clouds are converted into voxel-based neighborhood graphs. An environment encoder extracts node and scene features, while separate encoders represent the start and goal. At each diffusion step, sparse cross-attention retrieves nearby environment nodes for each noisy waypoint. A goal- and time-conditioned GRU (GT-GRU) combines this local context with the conditioning features to predict a clean trajectory. The prediction is converted to a noise estimate for the DDPM objective and reverse-diffusion updates.
+DRIFT combines graph-based environment perception with an autoregressive diffusion denoiser:
 
-## Code guide
+- **Graph perception** encodes a voxelized point cloud using a graph neural network.
+- **Sparse cross-attention** retrieves nearby environment features for each waypoint as the trajectory is denoised.
+- **GT-GRU** incorporates local environment context, goal information, and diffusion time into recurrent waypoint prediction.
 
-| File | Purpose |
-| --- | --- |
-| `src/models/model.py` | `HNav`: model assembly, training forward pass, and sampling interface |
-| `src/models/perception.py` | Environment, velocity, goal, and start-point encoding |
-| `src/models/backbones/perception_gnn.py` | EdgeConv / GAT environment features |
-| `src/models/generator_cmag.py` | Sparse local cross-attention and recurrent waypoint generation |
-| `src/models/backbones/gt_gru.py` | Goal- and time-conditioned recurrent cell |
-| `src/models/diffusion.py` | DDPM training objective and reverse-diffusion sampling |
-| `src/loss.py`, `src/models/diff_hausdorf.py` | Trajectory matching and geometric auxiliary losses |
-| `main.py`, `src/train.py` | Application entry point, optimization, validation, and checkpoints |
-| `src/data_loader/` | Dataset access, batching, and sample normalization |
-| `src/utils/integrated_processor.py`, `transform.py`, `voxel_graph.py` | Point-cloud processing, coordinate transforms, and graph construction |
-| `config_factory.py`, `src/utils/config*.py`, `arguments.py` | Configuration definitions and command-line options |
+Training combines a DDPM noise-prediction objective with auxiliary trajectory losses. At inference time, reverse diffusion generates a trajectory from Gaussian noise.
 
-Start with `HNav`, then follow `CMAGNNGenerator`, `GTGRUCell`, and `DiffusionModel`.
-The recurrent generator uses `SinusoidalPosEmb` from `src/models/backbones/unet.py` for diffusion timestep embeddings.
+## Requirements
 
-## Environment and data
+The main dependencies are PyTorch, PyTorch Geometric, torch-cluster, diffusers, and FAISS. Package versions are listed in [requirements.txt](requirements.txt).
 
-Dependencies are listed in `requirements.txt`. Use compatible PyTorch, PyG, and torch-cluster builds for your CPU or CUDA environment. The listed torch-cluster build targets PyTorch 2.0 / CUDA 11.8.
+Install PyTorch and the corresponding PyG and torch-cluster builds for your environment. The torch-cluster version listed in `requirements.txt` uses PyTorch 2.0 and CUDA 11.8.
 
-Launch training from the repository root:
+## Data
 
-```bash
-python main.py train --data_root /path/to/dataset --device 0 --conditioning_mode dynamic --denoiser_cell gtgru
+Organize the dataset as follows:
+
+```text
+data/
+├── data.pkl
+└── data_folder/
+    └── ...
 ```
 
-`--data_root` defaults to `./data`. The directory must contain `data.pkl` and `data_folder/`; see `TrainData.load_raw_data` and `DataDict` for the expected schema.
+`data.pkl` indexes the sequence files in `data_folder/`. The loader reads point clouds, poses, velocities, trajectories, and goals, then constructs local graphs and normalizes trajectory coordinates.
 
-The model interfaces are `HNav.forward(batch, epoch=...)` and `HNav.sample(batch)`. Sampling expects graph data, velocity, goal, the trajectory field supplying the start point, and normalization parameters.
+## Training
+
+Run from the repository root:
+
+```bash
+python main.py train \
+    --data_root ./data \
+    --device 0 \
+    --conditioning_mode dynamic \
+    --denoiser_cell gtgru
+```
+
+Common options:
+
+| Argument | Description |
+| --- | --- |
+| `--data_root` | Dataset directory |
+| `--device` | GPU index |
+| `--batch_size` | Training batch size |
+| `--output_dir` | Directory for training outputs |
+| `--config_file` | YAML configuration file |
+| `--snapshot` | Checkpoint to load |
+| `--seed` | Random seed |
+
+## Project structure
+
+```text
+.
+├── main.py                 # Training entry point
+├── config_factory.py       # Configuration helpers
+├── requirements.txt
+└── src/
+    ├── data_loader/        # Dataset loading and batching
+    ├── models/
+    │   ├── backbones/      # Graph encoder and recurrent cell
+    │   ├── perception.py   # Environment and state encoding
+    │   ├── generator_cmag.py
+    │   ├── diffusion.py    # DDPM training and sampling
+    │   └── model.py        # Model assembly
+    ├── loss.py             # Auxiliary trajectory losses
+    ├── train.py            # Training and validation
+    └── utils/              # Preprocessing, configuration, visualization
+```
